@@ -112,17 +112,55 @@ extension MyATTErrorArgs {
 }
 
 extension MyAdvertisementArgs {
+    // func toAdvertisement() -> [String : Any] {
+    //     // CoreBluetooth only support `CBAdvertisementDataLocalNameKey` and `CBAdvertisementDataServiceUUIDsKey`
+    //     // see https://developer.apple.com/documentation/corebluetooth/cbperipheralmanager/1393252-startadvertising
+    //     var advertisement = [String: Any]()
+    //     if nameArgs != nil {
+    //         let name = nameArgs!
+    //         advertisement[CBAdvertisementDataLocalNameKey] = name
+    //     }
+    //     if !serviceUUIDsArgs.isEmpty {
+    //         let serviceUUIDs = serviceUUIDsArgs.map { serviceUUIDArgs in serviceUUIDArgs!.toCBUUID() }
+    //         advertisement[CBAdvertisementDataServiceUUIDsKey] = serviceUUIDs
+    //     }
+    //     return advertisement
+    // }
     func toAdvertisement() -> [String : Any] {
-        // CoreBluetooth only support `CBAdvertisementDataLocalNameKey` and `CBAdvertisementDataServiceUUIDsKey`
-        // see https://developer.apple.com/documentation/corebluetooth/cbperipheralmanager/1393252-startadvertising
-        var advertisement = [String: Any]()
-        if nameArgs != nil {
-            let name = nameArgs!
-            advertisement[CBAdvertisementDataLocalNameKey] = name
+        var advertisement: [String: Any] = [:]
+        if let nameArgs = self.nameArgs {
+            advertisement[CBAdvertisementDataLocalNameKey] = nameArgs
         }
         if !serviceUUIDsArgs.isEmpty {
-            let serviceUUIDs = serviceUUIDsArgs.map { serviceUUIDArgs in serviceUUIDArgs!.toCBUUID() }
+            let serviceUUIDs = serviceUUIDsArgs.map { (uuidString) -> CBUUID in
+                // Normalize to uppercase for consistent checking.
+                let uppercaseUUID = uuidString!.uppercased()
+                // Check if it's a standard 128-bit representation of a 16-bit UUID.
+                if uppercaseUUID.hasPrefix("0000") && uppercaseUUID.hasSuffix("-0000-1000-8000-00805F9B34FB") {
+                    // If it is, extract the 4-character short code (e.g., "180D").
+                    let start = uppercaseUUID.index(uppercaseUUID.startIndex, offsetBy: 4)
+                    let end = uppercaseUUID.index(start, offsetBy: 4)
+                    let shortUUIDString = String(uppercaseUUID[start..<end])
+                    // Create the CBUUID from the short string. Core Bluetooth will advertise it as 16-bit.
+                    return CBUUID(string: shortUUIDString)
+                } else {
+                    // Otherwise, it's a custom 128-bit UUID, so use the full string.
+                    return CBUUID(string: uuidString!)
+                }
+            }
             advertisement[CBAdvertisementDataServiceUUIDsKey] = serviceUUIDs
+        }
+        if !serviceDataArgs.isEmpty {
+            let serviceData = serviceDataArgs.reduce(into: [CBUUID: Data]()) { result, element in
+                let uuid = CBUUID(string: element.key!)
+                let data = element.value!.data
+                result[uuid] = data
+            }
+            advertisement[CBAdvertisementDataServiceDataKey] = serviceData
+        }
+        if let manufacturerSpecificDataArgs = self.manufacturerSpecificDataArgs {
+            let manufacturerData = manufacturerSpecificDataArgs.data
+            advertisement[CBAdvertisementDataManufacturerDataKey] = manufacturerData
         }
         return advertisement
     }
